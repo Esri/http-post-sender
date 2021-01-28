@@ -9,9 +9,14 @@ This is a C# .Net console application to send data from a delimited text file to
 ## Instructions
 
 1. Clone the repo in Visual Studio Code.
-2. Update the app.config file as follows:
+2. Update the app.config file as follows:    
 
-    -	receiverUrl – Paste the complete URL to which data should be sent.
+
+    -	receiverUrl – Paste the complete URL to which data should be sent.    
+    -	authenticationArcGIS – True if your Velocity feed requires ArcGIS authentication, false if not.
+    -	tokenPortalUrl – Used only if authenticationArcGIS is true. The root url to the ArcGIS portal to be used for obtaining a token.
+    -	username – Used only if authenticationArcGIS is true. The username for generating a token.
+    -	password – Used only if authenticationArcGIS is true. The password for generating a token.
     -	fileUrl – Enter the URL to the simulation delimited file containing the data to be sent between the empty quotes for the value of fileUrl. If using our sample file, set this value to “https://a4iot-test-data.s3.us-west-2.amazonaws.com/point/Charlotte_Simulations/57Buses_in_CharlotteNC.csv”.
     -	hasHeaders – Enter true or false to indicate whether the simulation csv file has a header row of field names. If using our sample csv file, set this value to “true”.
     -	fieldDelimiter – the delimiter between fields in the simulation file. If using our sample csv file, set this value to “,”.
