@@ -20,19 +20,24 @@ using System.Diagnostics;
 using System.Globalization;
 using System.IO;
 using System.Net;
+using System.Net.Http;
+using System.Net.Http.Headers;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
-using Azure.Messaging.EventHubs;
-using Azure.Messaging.EventHubs.Producer;
+using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
 
-namespace EventHubsSender
+namespace HttpPostSender
 {
     class Program
     {
         
-        private static string connectionString = ConfigurationManager.AppSettings["connectionString"];
+        private static string receiverUrl = ConfigurationManager.AppSettings["receiverUrl"];
+        private static bool authenticationArcGIS = Boolean.Parse(ConfigurationManager.AppSettings["authenticationArcGIS"]);
+        private static string tokenPortalUrl = ConfigurationManager.AppSettings["tokenPortalUrl"];
+        private static string username = ConfigurationManager.AppSettings["username"];
+        private static string password = ConfigurationManager.AppSettings["password"];
         private static string fileUrl = ConfigurationManager.AppSettings["fileUrl"];
         private static bool hasHeaders = Boolean.Parse(ConfigurationManager.AppSettings["hasHeaders"]);
         private static string fieldDelimiter = ConfigurationManager.AppSettings["fieldDelimiter"];
@@ -43,6 +48,9 @@ namespace EventHubsSender
         private static string dateFormat = ConfigurationManager.AppSettings["dateFormat"];
         private static CultureInfo dateCulture = CultureInfo.CreateSpecificCulture(ConfigurationManager.AppSettings["dateCulture"]);
         private static bool repeatSimulation = Boolean.Parse(ConfigurationManager.AppSettings["repeatSimulation"]);
+
+        private static readonly HttpClient client = new HttpClient();
+        
         static async Task Main()
         {
             //Console.WriteLine("Starting...");
@@ -60,9 +68,10 @@ namespace EventHubsSender
                 string line;
                 string headerLine;
                 string[] fields = null;
+                string token = "";
                 JObject schema =  new JObject();
 
-                // Read and display lines from the file until the end of 
+                // Read lines from the file until the end of 
                 // the file is reached.
                 string[] contentArray = readStream.ReadToEnd().Replace("\r", "").Split('\n');
 
@@ -72,131 +81,177 @@ namespace EventHubsSender
                 bool runTask = true;
 
 
-                //if (hasHeaders)
-                //{
-                    if ((headerLine = contentArray[0]) != null)
-                    {
-                        //schema = new JObject();
-                        fields = headerLine.Split(fieldDelimiter);
-                        int fieldNum = 1;
-                        foreach (string fieldName in fields)
-                        {
-                            if (hasHeaders){
-                                schema[fieldName] = null;
-                            }
-                            else{  
-                                string genericFieldName = $"field{fieldNum}";                              
-                                schema[genericFieldName] = null;
-                            }
-                            fieldNum += 1;
-                        }
-                        Console.WriteLine("Schema created based on the incoming data:");
-                        Console.WriteLine(schema);
-                        Dictionary<string,string> dictObj = schema.ToObject<Dictionary<string,string>>();
-                        //Console.WriteLine($"New fields: {dictObj.Keys}");
-                        dictObj.Keys.CopyTo(fields,0);
-                    }
-                //}
-                
-                string connectionSubstring = connectionString.Substring(0,connectionString.LastIndexOf(';'));
-                Console.WriteLine($"Event hub connection string: {connectionSubstring}");
-                string eventHubName = connectionString.Substring(connectionString.LastIndexOf('=')+1);
-                Console.WriteLine($"Event hub name (entity path): {eventHubName}");
-
-                //topicClient = new TopicClient(ServiceBusConnectionString, TopicName);
-                // Create a producer client that you can use to send events to an event hub
-                await using (var producerClient = new EventHubProducerClient(connectionSubstring, eventHubName))
+    
+                if ((headerLine = contentArray[0]) != null)
                 {
-                    int count = 0;
-                    int countTotal = 0;
-                    EventDataBatch eventBatch = null;
-                    //string messageBody = "";
-                    
-                    var stopwatch = new Stopwatch();
-                    while (runTask)
+                    //schema = new JObject();
+                    fields = headerLine.Split(fieldDelimiter);
+                    int fieldNum = 1;
+                    foreach (string fieldName in fields)
                     {
-                        for (int l = (hasHeaders ? 1 : 0); l < c; l++)
-                        {
-                            line = contentArray[l];
+                        if (hasHeaders){
+                            schema[fieldName] = null;
+                        }
+                        else{  
+                            string genericFieldName = $"field{fieldNum}";                              
+                            schema[genericFieldName] = null;
+                        }
+                        fieldNum += 1;
+                    }
+                    Console.WriteLine("Schema created based on the incoming data:");
+                    Console.WriteLine(schema);
+                    Dictionary<string,string> dictObj = schema.ToObject<Dictionary<string,string>>();
+                    dictObj.Keys.CopyTo(fields,0);
+                }
 
-                            // Create a batch of events if needed
-                            if (eventBatch == null)
+                client.DefaultRequestHeaders.TryAddWithoutValidation("Accept", "*/*");
+                client.DefaultRequestHeaders.TryAddWithoutValidation("Referer", "http://localhost:8888");
+                client.DefaultRequestHeaders.TryAddWithoutValidation("Content-Type", "application/json; charset=utf-8");
+                if (authenticationArcGIS){
+                    string tokenStr = await getToken(tokenPortalUrl,username,password,21600); 
+                    dynamic tokenJson = JsonConvert.DeserializeObject(tokenStr); 
+                    token = tokenJson["token"];                                    
+                    client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", token);
+                }
+                                            
+                              
+                
+                int count = 0;
+                int countTotal = 0;
+                JArray eventBatch = null; 
+                
+                var stopwatch = new Stopwatch();
+                while (runTask)
+                {
+                    for (int l = (hasHeaders ? 1 : 0); l < c; l++)
+                    {
+                        line = contentArray[l];
+
+                        // Create a batch of events if needed
+                        if (eventBatch == null) 
+                        {
+                            
+                            eventBatch = new JArray();
+                            stopwatch.Start();
+                        }
+                        eventBatch = eventBatch ?? new JArray(); 
+                        dynamic[] values = line.Split(fieldDelimiter);
+                        for (int i = 0; i < schema.Count; i++)
+                        { 
+                            long longVal = 0;
+                            decimal decVal = 0;
+                            bool isLong = long.TryParse(values[i], out longVal);
+                            bool isDec = decimal.TryParse(values[i], out decVal);
+                            schema[fields[i]] = isLong ? longVal : isDec ? decVal : values[i];
+                        }
+                        if (setToCurrentTime)
+                        {
+                            if (String.IsNullOrEmpty(dateFormat))
                             {
-                                eventBatch = await producerClient.CreateBatchAsync();
-                                stopwatch.Start();
+                                schema[fields[timeField]] = new DateTimeOffset(DateTime.Now).ToUnixTimeMilliseconds();
                             }
-                            eventBatch = eventBatch ?? await producerClient.CreateBatchAsync();
-                            dynamic[] values = line.Split(fieldDelimiter);
-                            for (int i = 0; i < schema.Count; i++)
-                            { 
-                                long longVal = 0;
-                                decimal decVal = 0;
-                                bool isLong = long.TryParse(values[i], out longVal);
-                                bool isDec = decimal.TryParse(values[i], out decVal);
-                                schema[fields[i]] = isLong ? longVal : isDec ? decVal : values[i];
-                            }
-                            if (setToCurrentTime)
+                            else
                             {
-                                if (String.IsNullOrEmpty(dateFormat))
-                                {
+                                try{
+                                    schema[fields[timeField]] = DateTime.Now.ToString(dateFormat,dateCulture);
+                                }
+                                catch(Exception e){
                                     schema[fields[timeField]] = new DateTimeOffset(DateTime.Now).ToUnixTimeMilliseconds();
                                 }
-                                else
-                                {
-                                    try{
-                                        schema[fields[timeField]] = DateTime.Now.ToString(dateFormat,dateCulture);
-                                    }
-                                    catch(Exception e){
-                                        schema[fields[timeField]] = new DateTimeOffset(DateTime.Now).ToUnixTimeMilliseconds();
-                                    }
-                                }
                             }
-                            //Console.WriteLine(schema.ToString());
-                            count++;
+                        }
+                        
+                        count++;
 
-                            // Add events to the batch. An event is a represented by a collection of bytes and metadata. 
+                        // Add events to the batch.  
+                        eventBatch.Add(schema);
 
-                            eventBatch.TryAdd(new EventData(Encoding.UTF8.GetBytes(schema.ToString())));
-                            //messageBody = messageBody + schema.ToString()+"\n";
-                            if (count == numLinesPerBatch)
-                            {
+                        
+                        if (count == numLinesPerBatch)
+                        {
 
-                                // Use the producer client to send the batch of events to the event hub
-                                await producerClient.SendAsync(eventBatch);
-                                //var message = new Message(Encoding.UTF8.GetBytes(messageBody));
-                                //await topicClient.SendAsync(message);
+                           
+                            // send the batch of events to the REST endpoint
+                            string payload = JsonConvert.SerializeObject(eventBatch);
+                            var content = new StringContent(payload, System.Text.Encoding.UTF8, "application/json");
+                            content.Headers.ContentType = new MediaTypeHeaderValue("application/json");
+                            var response = await client.PostAsync(receiverUrl, content); 
+                            var responseString = await response.Content.ReadAsStringAsync();
+                            dynamic responseJson = JsonConvert.DeserializeObject(responseString);
+                            //if the request failed because the token expired, get a new one and retry the request
+                            if (!response.IsSuccessStatusCode && responseJson["error"]["code"] == 403 && authenticationArcGIS){                                    
+                                Console.WriteLine($"Renewing the token for {username}");
+                                string tokenStr = await getToken(tokenPortalUrl,username,password,21600); 
+                                dynamic tokenJson = JsonConvert.DeserializeObject(tokenStr); 
+                                token = tokenJson["token"];                                    
+                                client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer",token);
+                                response = await client.PostAsync(receiverUrl, content); 
+                                responseString = await response.Content.ReadAsStringAsync();
+                                responseJson = JsonConvert.DeserializeObject(responseString);                               
+                            }
+                            if (response.IsSuccessStatusCode){
                                 countTotal += count;
                                 eventBatch = null;
-                                //messageBody = "";
                                 stopwatch.Stop();
                                 int elapsed_time = (int)stopwatch.ElapsedMilliseconds;
                                 stopwatch.Reset();
-                                //Console.WriteLine(string.Format("A batch of {0} events has been published. It took {1} milliseconds. Total sent: {2}.", count, elapsed_time, countTotal));
+                                
                                 if (elapsed_time < sendInterval) {
-                                    Console.WriteLine(string.Format("A batch of {0} events has been published. It took {1} milliseconds. Waiting for {2} milliseconds. Total sent: {3}.", count, elapsed_time, sendInterval - elapsed_time, countTotal));
+                                    Console.WriteLine(string.Format($"A batch of {count} events has been sent. It took {elapsed_time} milliseconds. Waiting for {sendInterval - elapsed_time} milliseconds. Total sent: {countTotal}."));
                                     Thread.Sleep(sendInterval - elapsed_time);
                                 }
                                 else
                                 {
-                                    Console.WriteLine(string.Format("A batch of {0} events has been published. It took {1} milliseconds.  Total sent: {2}.", count, elapsed_time, countTotal));
+                                    Console.WriteLine(string.Format($"A batch of {count} events has been sent. It took {elapsed_time} milliseconds.  Total sent: {countTotal}."));
                                 }
                                 count = 0;
-
                             }
-                        }
-                        Console.WriteLine(string.Format("Reached the end of the simulation file. Repeat is set to {0}", (repeatSimulation)));
-                        if (!repeatSimulation)
-                        {
-                            runTask = false;
+                            else{
+                                return;
+                            }
+
                         }
                     }
+                    Console.WriteLine(string.Format($"Reached the end of the simulation file. Repeat is set to {repeatSimulation}"));
+                    if (!repeatSimulation)
+                    {
+                        runTask = false;
+                    }
                 }
+                
             }
             catch (Exception e)
             {
                 Console.WriteLine(e.Message);
                 Console.WriteLine(e.StackTrace);
                 Console.WriteLine(e.Data);
+            }
+        }
+
+        static async Task<string> getToken(string url, string user, string pass, double expiry)
+        {    
+            try
+            {        
+                var values = new Dictionary<string, string>
+                {
+                    { "username", user },
+                    { "password", pass },
+                    { "client", "referer" },
+                    { "referer", "http://localhost:8888"},
+                    { "f", "json"},
+                    { "expiration", expiry.ToString()}
+                };
+                
+                var content = new FormUrlEncodedContent(values);
+                var response = await client.PostAsync($"{url}/sharing/rest/generateToken", content);                
+                var responseString = await response.Content.ReadAsStringAsync();                
+                return responseString;
+            }
+            catch (Exception e)
+            {
+                Console.Out.WriteLine("getToken Error: " + e.Message);
+                //log.LogInformation("Error: " + e.Message);
+                return "getToken Error: " + e.Message;
             }
         }
     }
