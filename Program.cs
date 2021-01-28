@@ -108,7 +108,11 @@ namespace HttpPostSender
                 client.DefaultRequestHeaders.TryAddWithoutValidation("Referer", "http://localhost:8888");
                 client.DefaultRequestHeaders.TryAddWithoutValidation("Content-Type", "application/json; charset=utf-8");
                 if (authenticationArcGIS){
-                    string tokenStr = await getToken(tokenPortalUrl,username,password,21600); 
+                    string tokenStr = await getToken(tokenPortalUrl,username,password,21600);                     
+                    if (tokenStr.Contains("Unable to generate token.")){
+                        Console.WriteLine(tokenStr);
+                        return;
+                    }                 
                     dynamic tokenJson = JsonConvert.DeserializeObject(tokenStr); 
                     token = tokenJson["token"];                                    
                     client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", token);
@@ -175,41 +179,47 @@ namespace HttpPostSender
                             string payload = JsonConvert.SerializeObject(eventBatch);
                             var content = new StringContent(payload, System.Text.Encoding.UTF8, "application/json");
                             content.Headers.ContentType = new MediaTypeHeaderValue("application/json");
-                            var response = await client.PostAsync(receiverUrl, content); 
-                            var responseString = await response.Content.ReadAsStringAsync();
-                            dynamic responseJson = JsonConvert.DeserializeObject(responseString);
                             //if the request failed because the token expired, get a new one and retry the request
-                            if (!response.IsSuccessStatusCode && responseJson["error"]["code"] == 403 && authenticationArcGIS){                                    
-                                Console.WriteLine($"Renewing the token for {username}");
-                                string tokenStr = await getToken(tokenPortalUrl,username,password,21600); 
-                                dynamic tokenJson = JsonConvert.DeserializeObject(tokenStr); 
-                                token = tokenJson["token"];                                    
-                                client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer",token);
-                                response = await client.PostAsync(receiverUrl, content); 
-                                responseString = await response.Content.ReadAsStringAsync();
-                                responseJson = JsonConvert.DeserializeObject(responseString);                               
-                            }
-                            if (response.IsSuccessStatusCode){
+                            try{
+                                var response = await client.PostAsync(receiverUrl, content); 
+                                var responseString = await response.Content.ReadAsStringAsync();
+                                dynamic responseJson = JsonConvert.DeserializeObject(responseString);
+                                if (!response.IsSuccessStatusCode && responseJson["error"]["code"] == 403 && authenticationArcGIS){                                    
+                                    Console.WriteLine($"Renewing the token for {username}");
+                                    string tokenStr = await getToken(tokenPortalUrl,username,password,21600);                     
+                                    if (tokenStr.Contains("Unable to generate token.")){
+                                        Console.WriteLine(tokenStr);
+                                        return;
+                                    }                 
+                                    dynamic tokenJson = JsonConvert.DeserializeObject(tokenStr); 
+                                    token = tokenJson["token"];                                    
+                                    client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer",token);
+                                    response = await client.PostAsync(receiverUrl, content); 
+                                    responseString = await response.Content.ReadAsStringAsync();
+                                    responseJson = JsonConvert.DeserializeObject(responseString);                               
+                                }
                                 countTotal += count;
-                                eventBatch = null;
                                 stopwatch.Stop();
-                                int elapsed_time = (int)stopwatch.ElapsedMilliseconds;
-                                stopwatch.Reset();
-                                
+                                int elapsed_time = (int)stopwatch.ElapsedMilliseconds;                                
                                 if (elapsed_time < sendInterval) {
                                     Console.WriteLine(string.Format($"A batch of {count} events has been sent. It took {elapsed_time} milliseconds. Waiting for {sendInterval - elapsed_time} milliseconds. Total sent: {countTotal}."));
                                     Thread.Sleep(sendInterval - elapsed_time);
                                 }
                                 else
                                 {
-                                    Console.WriteLine(string.Format($"A batch of {count} events has been sent. It took {elapsed_time} milliseconds.  Total sent: {countTotal}."));
+                                    Console.WriteLine(string.Format($"A batch of {count} events has been sent. It took {elapsed_time} milliseconds. Total sent: {countTotal}."));
                                 }
+                            }
+                            catch (Exception ex){
+                                Console.WriteLine(string.Format($"A batch of {count} events was sent, but the request failed. Total sent: {countTotal}."));
+                                Console.WriteLine(ex.Message);
+                            }
+                            finally{
+                                
+                                eventBatch = null;
+                                stopwatch.Reset();
                                 count = 0;
-                            }
-                            else{
-                                return;
-                            }
-
+                            }                           
                         }
                     }
                     Console.WriteLine(string.Format($"Reached the end of the simulation file. Repeat is set to {repeatSimulation}"));
@@ -243,8 +253,8 @@ namespace HttpPostSender
                 };
                 
                 var content = new FormUrlEncodedContent(values);
-                var response = await client.PostAsync($"{url}/sharing/rest/generateToken", content);                
-                var responseString = await response.Content.ReadAsStringAsync();                
+                var response = await client.PostAsync($"{url}/sharing/rest/generateToken", content);            
+                var responseString = await response.Content.ReadAsStringAsync();
                 return responseString;
             }
             catch (Exception e)
