@@ -33,7 +33,7 @@ This is a C# .Net console application to send data from a delimited text file to
 6. Deploy to Web App.
 7. Set up a feed in ArcGIS Velocity or an input in ArcGIS GeoEvent Server to receive the messages sent by this app.
 
-Detailed instructions are in the "Deploy http-post-sender to Azure App Service using Visual Studio Code .docx" file in this repo.
+Detailed instructions are in the "Deploy HttpPostSender to Azure App Service using Visual Studio Code.pdf" file in this repo.
 
 ## Requirements
 
