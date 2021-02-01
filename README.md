@@ -18,7 +18,7 @@ This is a C# .Net console application to send data from a delimited text file to
     -	username – Used only if authenticationArcGIS is true. The username for generating a token.
     -	password – Used only if authenticationArcGIS is true. The password for generating a token.
     -	fileUrl – Enter the URL to the simulation delimited file containing the data to be sent between the empty quotes for the value of fileUrl. If using our sample file, set this value to “https://a4iot-test-data.s3.us-west-2.amazonaws.com/point/Charlotte_Simulations/57Buses_in_CharlotteNC.csv”.
-    -	hasHeaderRow – True if the simulation csv file has a header row of field names, false if not. If using our sample csv file, set this value to “true”.
+    -	hasHeaderRow – True if the simulation file has a header row of field names, false if not. If using our sample csv file, set this value to “true”.
     -	fieldDelimiter – the delimiter between fields in the simulation file. If using our sample csv file, set this value to “,”.
     -   convertToJson - True to convert the delimited records to JSON, false to leave them in delimited format. 
     -	numLinesPerBatch – Enter the number of lines to send with each batch. The app will read this number of lines from the simulation csv file, bundle them into a batch of events and send them to the REST endpoint all at once. Then it will read the next set of lines into a batch, send them and repeat until the end of the simulation file is reached and all lines have been sent. You might set this value to be equal to the number of unique track ids in your data or use it in conjunction with the sendInterval to simply control the rate of events into your REST endpoint. If using our sample csv file, there are 57 unique track ids.
@@ -27,7 +27,7 @@ This is a C# .Net console application to send data from a delimited text file to
     -	setToCurrentTime – Enter true to update the values in the date field to the date and time the event is sent to the REST endpoint, false to use the existing date values for each record. If using our sample csv file, set this value to “true”. 
     -	dateFormat – Optional, only used if setToCurrentTime is true. In that case the date values will be formatted as strings according to this formatter. If this value is empty, date values will be epochs. Formatting string can be standard or custom. See https://docs.microsoft.com/en-us/dotnet/standard/base-types/standard-date-and-time-format-strings and https://docs.microsoft.com/en-us/dotnet/standard/base-types/custom-date-and-time-format-strings
     -	dateCulture - Optional, examples: "en-US", "es-ES", "fr-FR"; only used if setToCurrentTime is true and dateFormat is not empty. In that case date strings will be formatted according to the culture specified in this setting or the default culture if empty.
-    -   repeatSimulation - Enter true to indicate that the app, upon reaching the end of the simulation csv file, should return to the top of the file and repeat the simulation, or false to send the file once and stop.
+    -   repeatSimulation - Enter true to indicate that the app, upon reaching the end of the simulation file, should return to the top of the file and repeat the simulation, or false to send the file once and stop.
 
 3. Commit the changes in the app.config file
 4. Deploy to Azure App Service to your Azure portal.
