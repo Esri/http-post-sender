@@ -12,7 +12,7 @@ This is a C# .Net console application to send data from a delimited text file to
 2. Update the app.config file as follows:    
 
 
-    -	receiverUrl – Paste the complete URL to which data should be sent.    
+    -	receiverUrl – The URL to which data should be sent.    
     -	authenticationArcGIS – True if your Velocity feed requires ArcGIS authentication, false if not.
     -	tokenPortalUrl – Used only if authenticationArcGIS is true. The root url to the ArcGIS portal to be used for obtaining a token.
     -	username – Used only if authenticationArcGIS is true. The username for generating a token.
