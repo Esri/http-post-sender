@@ -45,6 +45,7 @@ namespace HttpPostSender
         private static bool convertToJson = Boolean.Parse(ConfigurationManager.AppSettings["convertToJson"]);
         private static int numLinesPerBatch = Int32.Parse(ConfigurationManager.AppSettings["numLinesPerBatch"]);
         private static int sendInterval = Int32.Parse(ConfigurationManager.AppSettings["sendInterval"]);
+        private static long realRateMultiplier = Int64.Parse(ConfigurationManager.AppSettings["realRateMultiplier"]);
         private static int timeField = Int32.Parse(ConfigurationManager.AppSettings["timeField"]);
         private static bool setToCurrentTime = Boolean.Parse(ConfigurationManager.AppSettings["setToCurrentTime"]);
         private static string dateFormat = ConfigurationManager.AppSettings["dateFormat"];
@@ -134,6 +135,15 @@ namespace HttpPostSender
                 
                 var stopwatch = new Stopwatch();
                 var taskStopwatch = new Stopwatch();
+
+                DateTime previousLineDateTime = DateTime.MinValue;
+                DateTime currentLineDateTime = DateTime.MinValue;
+                bool hasCurrentDate = false;
+                long waitTime = -1;
+                string timeString;
+                long timeUnix;
+
+
                 while (runTask)
                 {
                     taskStopwatch.Start();
@@ -159,6 +169,32 @@ namespace HttpPostSender
                         
                         dynamic[] values = line.Split(fieldDelimiter);
                         
+                        if (sendInterval == -1)
+                        {
+                            timeString = values[timeField];
+                            hasCurrentDate = false;
+
+                            if (long.TryParse(timeString, out timeUnix))
+                            {
+                                currentLineDateTime = timeString.Length == 10 ? DateTimeOffset.FromUnixTimeSeconds(timeUnix).DateTime : DateTimeOffset.FromUnixTimeMilliseconds(timeUnix).DateTime;
+                                hasCurrentDate = true;
+                            }
+                            else
+                            {
+                                hasCurrentDate = DateTime.TryParse(timeString, out currentLineDateTime);
+                            }
+
+                            if (hasCurrentDate && previousLineDateTime != DateTime.MinValue && currentLineDateTime > previousLineDateTime)
+                            {
+                                waitTime = Convert.ToInt64((currentLineDateTime - previousLineDateTime).TotalMilliseconds);
+                                Thread.Sleep((int)(waitTime / (realRateMultiplier / 100)));
+                            }
+                            if (hasCurrentDate)
+                            {
+                                previousLineDateTime = currentLineDateTime;
+                            }
+                        }
+
                         if (setToCurrentTime)
                         {
                             if (String.IsNullOrEmpty(dateFormat))
