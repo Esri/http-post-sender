@@ -24,6 +24,7 @@ using System.Net;
 using System.Net.Http;
 using System.Net.Http.Headers;
 using System.Text;
+using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
 using Newtonsoft.Json;
@@ -127,7 +128,7 @@ namespace HttpPostSender
                 }
                                             
                               
-                
+                numLinesPerBatch = sendInterval == -1 ? 1 : numLinesPerBatch;            
                 int count = 0;
                 int countTotal = 0;
                 //JArray eventBatch = null; 
@@ -167,8 +168,8 @@ namespace HttpPostSender
                         //eventBatch = eventBatch ?? new JArray(); 
                         messageBatch = messageBatch ?? new dynamic[numLinesPerBatch];
                         
-                        dynamic[] values = line.Split(fieldDelimiter);
-                        
+                        //dynamic[] values = line.Split(fieldDelimiter);
+                        string[] values = Regex.Split(line, $"{fieldDelimiter}(?=(?:[^\"]*\"[^\"]*\")*[^\"]*$)");
                         if (sendInterval == -1)
                         {
                             timeString = values[timeField];
